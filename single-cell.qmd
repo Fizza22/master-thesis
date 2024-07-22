@@ -1,0 +1,172 @@
+---
+title: "Replicate Fizza analysis"
+author: "AG"
+format:
+  html:
+    embed-resources: true
+---
+
+
+2024-06-26
+
+Replicate analysis for Master Student Fizza IRFAN
+
+## DGE from Tijana
+
+From her paper, fetch and unzip
+
+``` bash
+git clone https://github.com/tijanaran/NRAS-mutant_melanoma_Single-cell_RNA_Seq.git
+for FILE in NRAS-mutant_melanoma_Single-cell_RNA_Seq/*.zip; do unzip "$FILE"; done
+```
+
+
+```{r}
+#| label: setup
+#| include: false
+
+# Load necessary libraries
+library(dplyr)
+library(Seurat)
+library(ggplot2)
+library(readr)
+library(tibble)
+library(purrr)
+library(fs)
+```
+
+
+Correspondences of experiments from Tijana `scRNA_TR.Rmd`,
+
+rename Seurat identifiers with more relevant names
+
+```{r}
+correspondences <- c(
+  TISKM1_S1_DGE = "Untreated_SKMel30",
+  TISKM2_S2_DGE = "Treated_24h_SKMel30",
+  TISKM3_S3_DGE = "Treated_4days_SKMel30",
+  TISKM4_S4_DGE = "Treated_long_SKMel30"
+)
+```
+
+```{r}
+create_dgcmatrix <- function(path, max_cols = 1000) {
+  id <- path_file(path) |> path_ext_remove() |> as.character()
+  new_id <- correspondences[id]
+  read_tsv(path, show_col_types = FALSE) |> 
+    select(seq_len(max_cols)) |> 
+    column_to_rownames(var = "GENE") |> 
+    as.matrix() |> 
+    as("dgCMatrix") |> 
+    CreateSeuratObject(project = new_id)
+}
+```
+
+Shouldn't it be 1001 columns to read? Or the full 3001?
+
+Functional programming, loop over the 4 SKMEL30 files
+
+```{r}
+fs::dir_ls("NRAS-mutant_melanoma_Single-cell_RNA_Seq/", glob = "*SK*_DGE.txt") |> 
+  map(create_dgcmatrix, max_cols = 1001) -> SK30
+SK30
+```
+
+
+Current identifiers
+
+```{r}
+map_chr(SK30, \(x) Idents(x) |> levels())
+```
+
+
+
+## Merge the 4 Surat object without integration
+
+```{r}
+# Example to merge more than two Seurat objects
+SK30_merge <- merge(x = SK30[[1]], y = SK30[-1])
+SK30_merge
+```
+
+
+
+### Visualize QC metrics as a violin plot
+
+```{r}
+#| warning: false
+#| fig-width: 10
+library(patchwork)
+
+
+SK30_merge[["percent.mt"]] <- PercentageFeatureSet(SK30_merge, pattern = "^MT-") 
+SK30_merge_filtered <- subset(SK30_merge, subset = percent.mt < 15)
+vplot_SK30 <- VlnPlot(SK30_merge_filtered, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+plot1_SK30 <- FeatureScatter(SK30_merge_filtered, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2_SK30 <- FeatureScatter(SK30_merge_filtered, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+(plot1_SK30 + plot2_SK30) / vplot_SK30
+```
+
+#### Normalize the data and scale and PCA
+
+```{r}
+NormalizeData(SK30_merge_filtered) |> 
+  FindVariableFeatures(selection.method = "vst", nfeatures = 2000) |> 
+  ScaleData() |> 
+  RunPCA() -> SK30_pca
+SK30_pca
+```
+
+### visualize PCA results
+
+```{r}
+print(SK30_pca[["pca"]], dims = 1:5, nfeatures = 5)
+VizDimLoadings(SK30_pca, dims = 1:2, reduction = "pca")
+DimPlot(SK30_pca, reduction = "pca")
+```
+
+
+
+### Heatmap
+```{r}
+DimHeatmap(SK30_pca, dims = 1, cells = 500, balanced = TRUE)
+DimHeatmap(SK30_pca, dims = 1:5, cells = 500, balanced = TRUE)
+```
+
+### Perform UMAP
+
+- Find neighbors and clusters
+
+```{r}
+RunUMAP(SK30_pca, dims = 1:10) |> 
+  FindNeighbors(dims = 1:10) |> 
+  FindClusters(resolution = 0.5) -> SK30_umap
+SK30_umap
+```
+
+
+
+### Visualize BCL2 expression on UMAP
+```{r}
+FeaturePlot(SK30_umap, features = "BCL2", reduction = "umap") +
+  ggtitle("BCL-2 Expression on UMAP") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 15, face = "bold"))
+```
+
+Can we get the 4 conditions highlighted in there?
+
+```{r}
+VlnPlot(SK30_umap, features = c("BCL2", "ACTB"), layer = "data", group.by = "orig.ident", pt.size = 0.1) +
+  #ggtitle("BCL2 Expression Across Clusters") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 15, face = "bold"))
+```
+
+```{r}
+DotPlot(SK30_umap, features = "BCL2") +
+  ggtitle("BCL2 Expression Dot Plot") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 15, face = "bold"))
+```
+
