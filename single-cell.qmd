@@ -1,15 +1,11 @@
 ---
-title: "Replicate Fizza analysis"
-author: "AG"
+title: "Single cell data analysis"
+author: "Fizza Irfan" "AG"
 format:
   html:
     embed-resources: true
 ---
 
-
-2024-06-26
-
-Replicate analysis for Master Student Fizza IRFAN
 
 ## DGE from Tijana
 
@@ -38,14 +34,25 @@ library(fs)
 
 Correspondences of experiments from Tijana `scRNA_TR.Rmd`,
 
-rename Seurat identifiers with more relevant names
 
 ```{r}
 correspondences <- c(
   TISKM1_S1_DGE = "Untreated_SKMel30",
   TISKM2_S2_DGE = "Treated_24h_SKMel30",
   TISKM3_S3_DGE = "Treated_4days_SKMel30",
-  TISKM4_S4_DGE = "Treated_long_SKMel30"
+  TISKM4_S4_DGE = "Treated_long_SKMel30",
+  TI21_S1_DGE = "Untreated_Meljuso",
+  TI22_S2_DGE = "Treated_24h_Meljuso",
+  TI23_S3_DGE = "Treated_4days_Meljuso",
+  TI24_S4_DGE = "Treated_long_Meljuso",
+  TI25_S1_DGE = "Untreated_IPC298",
+  TI26_S2_DGE = "Treated_24h_IPC298",
+  TI27_S3_DGE = "Treated_4days_IPC298",
+  TI28_S4_DGE = "Treated_long_IPC298",
+  TI41_S1_DGE = "Untreated_M20",
+  TI42_S2_DGE = "Treated_24h_M20",
+  TI43_S3_DGE = "Treated_4days_M20",
+  TI44_S4_DGE = "Treated_long_M20"
 )
 ```
 
@@ -54,7 +61,7 @@ create_dgcmatrix <- function(path, max_cols = 1000) {
   id <- path_file(path) |> path_ext_remove() |> as.character()
   new_id <- correspondences[id]
   read_tsv(path, show_col_types = FALSE) |> 
-    select(seq_len(max_cols)) |> 
+    dplyr::select(seq_len(max_cols)) |> 
     column_to_rownames(var = "GENE") |> 
     as.matrix() |> 
     as("dgCMatrix") |> 
@@ -62,60 +69,176 @@ create_dgcmatrix <- function(path, max_cols = 1000) {
 }
 ```
 
-Shouldn't it be 1001 columns to read? Or the full 3001?
 
-Functional programming, loop over the 4 SKMEL30 files
+loop over the all files
 
 ```{r}
-fs::dir_ls("NRAS-mutant_melanoma_Single-cell_RNA_Seq/", glob = "*SK*_DGE.txt") |> 
-  map(create_dgcmatrix, max_cols = 1001) -> SK30
-SK30
+#| eval: false
+
+fs::dir_ls("NRAS-mutant_melanoma_Single-cell_RNA_Seq/", regexp = "TI2[1-4].+_DGE\\.txt$") |> 
+  map(create_dgcmatrix, max_cols = 1001, .progress = "Loading MelJUSO files") -> Meljuso
+
+fs::dir_ls("NRAS-mutant_melanoma_Single-cell_RNA_Seq/", regexp = "TI2[5-8].+_DGE\\.txt$") |> 
+  map(create_dgcmatrix, max_cols = 1001, .progress = "Loading IPC files") -> IPC298
+
+fs::dir_ls("NRAS-mutant_melanoma_Single-cell_RNA_Seq/", glob = "*TISKM*_DGE.txt") |>
+  map(create_dgcmatrix, max_cols = 1001,  .progress = "Loading SKMEL files") -> SKMel30
+SKMel30
+
+fs::dir_ls("NRAS-mutant_melanoma_Single-cell_RNA_Seq/", glob = "*TI4*_DGE.txt" ) |>
+  map(create_dgcmatrix, max_cols = 1001, .progress = "Loading M20 files") -> M20
+M20
+
+saveRDS(Meljuso, "seurat_meljuso.rds")
+saveRDS(IPC298, "seurat_ipc298.rds")
+saveRDS(SKMel30, "seurat_skmel30.rds")
+saveRDS(M20, "seurat_m20.rds")
+
 ```
+
+Load saved data Seurat object per cell line
+
+```{r}
+Meljuso <- read_rds("seurat_meljuso.rds")
+IPC298 <- read_rds("seurat_ipc298.rds")
+SKMel30 <- read_rds("seurat_skmel30.rds")
+M20 <- read_rds("seurat_m20.rds")
+```
+
 
 
 Current identifiers
 
 ```{r}
-map_chr(SK30, \(x) Idents(x) |> levels())
+map_chr(Meljuso, \(x) Idents(x) |> levels())
+map_chr(IPC298, \(x) Idents(x) |> levels())
+map_chr(SKMel30, \(x) Idents(x) |> levels())
+map_chr(M20, \(x) Idents(x) |> levels())
 ```
 
-
-
-## Merge the 4 Surat object without integration
+## Merge the Surat object without integration
 
 ```{r}
 # Example to merge more than two Seurat objects
-SK30_merge <- merge(x = SK30[[1]], y = SK30[-1])
-SK30_merge
+Meljuso_merge <- merge(x = Meljuso[[1]], y = Meljuso[-1])
+IPC298_merge <- merge(x = IPC298[[1]], y = IPC298[-1])
+SKMel30_merge <- merge(x = SKMel30[[1]], y = SKMel30[-1])
+M20_merge <- merge(x = M20[[1]], y = M20[-1])
 ```
 
 
 
-### Visualize QC metrics as a violin plot
+### defining function for filtering MT genes 
+
+```{r}
+# Define the function
+filter_cell_lines <- function(cell_line) {
+  cell_line[["percent.mt"]] <- PercentageFeatureSet(cell_line, pattern = "^MT-")
+  cell_line_filtered <- subset(cell_line, subset = percent.mt < 15)
+  
+  return(cell_line_filtered)
+}
+```
+
+## filtering MT genes for 4 cell lines
+```{r}
+Meljuso_filtered <- filter_cell_lines(Meljuso_merge)
+IPC298_filtered <- filter_cell_lines(IPC298_merge)
+SKMel30_filtered <- filter_cell_lines(SKMel30_merge)
+M20_filtered <- filter_cell_lines(M20_merge)
+```
+
+
+
+###Visualize QC metrics as a violin plot
 
 ```{r}
 #| warning: false
 #| fig-width: 10
 library(patchwork)
 
-
-SK30_merge[["percent.mt"]] <- PercentageFeatureSet(SK30_merge, pattern = "^MT-") 
-SK30_merge_filtered <- subset(SK30_merge, subset = percent.mt < 15)
-vplot_SK30 <- VlnPlot(SK30_merge_filtered, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
-plot1_SK30 <- FeatureScatter(SK30_merge_filtered, feature1 = "nCount_RNA", feature2 = "percent.mt")
-plot2_SK30 <- FeatureScatter(SK30_merge_filtered, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
-(plot1_SK30 + plot2_SK30) / vplot_SK30
+generate_plots <- function(seurat_obj) {
+  vplot <- VlnPlot(seurat_obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+  plot1 <- FeatureScatter(seurat_obj, feature1 = "nCount_RNA", feature2 = "percent.mt")
+  plot2 <- FeatureScatter(seurat_obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+  combined_plot <- (plot1 + plot2) / vplot
+  return(combined_plot)
+}
 ```
+
+##Meljuso
+
+```{r}
+#| warning: false
+#| fig-width: 10
+Meljuso_plots <- generate_plots(Meljuso_filtered)
+print(Meljuso_plots)
+```
+
+##IPC298
+```{r}
+#| warning: false
+#| fig-width: 10
+IPC298_plots <- generate_plots(IPC298_filtered)
+print(IPC298_plots)
+```
+
+##SKMel30
+```{r}
+#| warning: false
+#| fig-width: 10
+SKMel30_plots <- generate_plots(SKMel30_filtered)
+print(SKMel30_plots)
+```
+
+##M20
+```{r}
+#| warning: false
+#| fig-width: 10
+M20_plots <- generate_plots(M20_filtered)
+print(M20_plots)
+```
+##Normalizing data
+```{r}
+Meljuso_normalized <- Meljuso_filtered %>%
+    NormalizeData()
+IPC298_normalized <-IPC298_filtered %>%
+    NormalizeData()
+SKMel30_normalized <-SKMel30_filtered %>%
+    NormalizeData()
+M20_normalized <-M20_filtered %>%
+    NormalizeData()
+```
+## violin plots for normalized data
+```{r}
+plot_violin(Meljuso_normalized, features = c("BCL2", "ACTB"))
+plot_violin(IPC298_normalized, features = c("BCL2", "ACTB"))
+plot_violin(SKMel30_normalized, features = c("BCL2", "PARP1"))
+plot_violin(M20_normalized, features = c("BCL2", "ACTB"))
+```
+
+
 
 #### Normalize the data and scale and PCA
 
 ```{r}
-NormalizeData(SK30_merge_filtered) |> 
-  FindVariableFeatures(selection.method = "vst", nfeatures = 2000) |> 
-  ScaleData() |> 
-  RunPCA() -> SK30_pca
-SK30_pca
+processing_seurat_object <- function(seurat_obj) {
+  seurat_obj %>%
+    NormalizeData() %>%
+    FindVariableFeatures(selection.method = "vst", nfeatures = 2000) %>%
+    ScaleData() %>%
+    RunPCA()
+}
 ```
+
+## run PCA
+```{r}
+Meljuso_pca <- processing_seurat_object(Meljuso_filtered)
+IPC298_pca <- processing_seurat_object(IPC298_filtered)
+SKMel30_pca <- processing_seurat_object(SKMel30_filtered)
+M20_pca <- processing_seurat_object(M20_filtered)
+```
+
 
 ### visualize PCA results
 
@@ -126,47 +249,161 @@ DimPlot(SK30_pca, reduction = "pca")
 ```
 
 
-
-### Heatmap
-```{r}
-DimHeatmap(SK30_pca, dims = 1, cells = 500, balanced = TRUE)
-DimHeatmap(SK30_pca, dims = 1:5, cells = 500, balanced = TRUE)
-```
-
 ### Perform UMAP
 
 - Find neighbors and clusters
 
 ```{r}
-RunUMAP(SK30_pca, dims = 1:10) |> 
-  FindNeighbors(dims = 1:10) |> 
-  FindClusters(resolution = 0.5) -> SK30_umap
-SK30_umap
+UMAP_function <- function(seurat_object, dims = 1:10, resolution = 0.5) {
+  seurat_object <- RunUMAP(seurat_object, dims = dims)
+  seurat_object <- FindNeighbors(seurat_object, dims = dims)
+  seurat_object <- FindClusters(seurat_object, resolution = resolution)
+  
+  return(seurat_object)
+}
 ```
 
-
+### apply UMAP on cell lines
+```{r}
+Meljuso_umap <- UMAP_function(Meljuso_pca)
+IPC298_umap <- UMAP_function(IPC298_pca)
+SKMel30_umap <- UMAP_function(SKMel30_pca)
+M20_umap <- UMAP_function(M20_pca)
+```
 
 ### Visualize BCL2 expression on UMAP
-```{r}
-FeaturePlot(SK30_umap, features = "BCL2", reduction = "umap") +
-  ggtitle("BCL-2 Expression on UMAP") +
-  theme_minimal() +
-  theme(plot.title = element_text(size = 15, face = "bold"))
-```
-
-Can we get the 4 conditions highlighted in there?
 
 ```{r}
-VlnPlot(SK30_umap, features = c("BCL2", "ACTB"), layer = "data", group.by = "orig.ident", pt.size = 0.1) +
-  #ggtitle("BCL2 Expression Across Clusters") +
-  theme_minimal() +
-  theme(plot.title = element_text(size = 15, face = "bold"))
+plot_feature_umap <- function(seurat_object, feature) {
+  FeaturePlot(seurat_object, features = feature, reduction = "umap") +
+    ggtitle(paste(feature, "Expression on UMAP")) +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 15, face = "bold"))
+}
 ```
 
+## Apply to cell lines
 ```{r}
-DotPlot(SK30_umap, features = "BCL2") +
-  ggtitle("BCL2 Expression Dot Plot") +
-  theme_minimal() +
-  theme(plot.title = element_text(size = 15, face = "bold"))
+Meljuso_BCL2_umap <- plot_feature_umap(Meljuso_umap, "BCL2")
+IPC298_BCL2_umap <- plot_feature_umap(IPC298_umap, "BCL2")
+SKMel30_BCL2_umap <- plot_feature_umap(SKMel30_umap, "BCL2")
+M20_BCL2_umap <- plot_feature_umap(M20_umap, "BCL2")
+
+print(Meljuso_BCL2_umap)
+print(IPC298_BCL2_umap)
+print(SKMel30_BCL2_umap)
+print(M20_BCL2_umap)
 ```
+## violin plot function
+```{r}
+plot_violin <- function(seurat_object, features, group_by = "orig.ident", pt_size = 0.1) {
+  VlnPlot(seurat_object, features = features, layer = "data", group.by = group_by, pt.size = pt_size) +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 15, face = "bold"))
+}
+```
+
+##violin plot for meljuso
+```{r}
+Meljuso_violinplot <- plot_violin(Meljuso_umap, features = c("BCL2", "PARP1"))
+Meljuso_violinplot
+```
+
+## violin plot for IPC298
+```{r}
+IPC298_violinplot <- plot_violin(IPC298_umap, features = c("BCL2", "PARP1"))
+IPC298_violinplot
+```
+
+## violin plot for SKMel30
+```{r}
+SKMel30_violinplot <- plot_violin(SKMel30_umap, features = c("BCL2", "PARP1"))
+SKMel30_violinplot
+```
+
+## violin plot for M20
+```{r}
+M20_violinplot <- plot_violin(M20_umap, features = c("BCL2", "PARP1"))
+M20_violinplot
+```
+
+
+Extract expression of BCL2 from violin plot
+
+```{r}
+ls() |> stringr::str_subset("violinplot$") |> 
+  set_names(nm = \(x) stringr::str_remove(x, "_violinplot$")) |> 
+  map(\(x) {
+    # convert characters back symbols and evaluate to get the object
+    # then a list of 2, [[1]] is BCL2 and [[2]] is PARP
+    # in ggplot, plot object are list, with the data.frame in the "data" element
+    eval(as.name(x))[[1]][["data"]] |> as_tibble()
+  }) |> 
+  bind_rows(.id = "cells") |> 
+  filter(stringr::str_detect(ident, "^Untreated")) |> 
+  ggplot(aes(y = BCL2, x = ident)) +
+  geom_violin() +
+  geom_jitter(size = 0.5, alpha = 0.5) +
+  theme_classic() +
+  labs(
+    title = "BCL-2 Expression Across Different Conditions",
+    x = "Cell lines",
+    y = "BCL2 Expression"
+  ) +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 15),
+    axis.title.y = element_text(size = 15)
+  )
+```
+
+
+
+## Plot untreated condition of each cell line together
+```{r}
+
+
+# Function to generate violin plots for specific conditions from multiple Seurat objects
+plot_violin_multiple <- function(seurat_objects, features, conditions, group_by = "orig.ident", pt_size = 0.1) {
+  # List to store individual plots
+  plot_list <- list()
+  
+  # Iterate over each Seurat object and its corresponding condition
+  for (i in seq_along(seurat_objects)) {
+    seurat_object <- seurat_objects[[i]]
+    object_name <- names(seurat_objects)[i]
+    condition <- conditions[[i]]
+    
+    # Filter the Seurat object for the specified condition
+    seurat_filtered <- subset(seurat_object, subset = !!sym(group_by) == condition)
+    
+    # Create the violin plot for the filtered Seurat object
+    p <- VlnPlot(seurat_filtered, features = features, layer = "data", group.by = group_by, pt.size = pt_size) +
+      theme_minimal() +
+       theme(plot.title = element_blank())
+    
+    # Add plot to the list
+    plot_list[[i]] <- p
+  }
+  
+  # Combine all plots into a single figure
+  combined_plot <- wrap_plots(plot_list, ncol = 4)
+  plot_annotation(title = "BCL-2 Expression in untreated cells across four NRAS Melanoma Cell Lines",
+                    theme = theme(plot.title = element_text(size = 20, face = "bold")))
+  
+  return(combined_plot)
+}
+
+seurat_list <- list( Meljuso_umap, IPC298_umap, SKMel30_umap,M20_umap)
+
+# List of corresponding condition names
+conditions <- c("Untreated_Meljuso", "Untreated_IPC298", "Untreated_SKMel30", "Untreated_M20")
+plot_violin_multiple(seurat_list, features = "BCL2", condition = conditions) -> combined_violin_plot
+
+# Print the combined plot
+print(combined_violin_plot)
+
+```
+
+
 
