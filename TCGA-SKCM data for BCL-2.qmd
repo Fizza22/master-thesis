@@ -36,6 +36,10 @@ library(tidyr)
 ```
 
 ## Load TCGA-SKCM files downloaded from Xena(Santa Cruz)
+#TCGA-SKCM.htseq_fpkm-uq.tsv/TCGA-SKCM.htseq_fpkm-uq.tsv
+#TCGA-SKCM.survival.tsv
+#TCGA-SKCM.GDC_phenotype.tsv/TCGA-SKCM.GDC_phenotype.tsv
+#TCGA-SKCM.mutect2_snv.tsv
 
 ```{r}
 
@@ -146,8 +150,8 @@ nras_mutated<- nras_mutated |>
 # Merge BCL-2 expression data with nras data
 merged_data_nras <- merge(nras_mutated, bcl2_data_long, by.x = "sample", by.y = "sample")
 # Categorize into high and low expression
-merged_data_nras <- merged_data_nras%>%
-  mutate(expression_group = ifelse(BCL2_expression >= median_expression, "High", "Low"))
+#merged_data_nras <- merged_data_nras%>%
+  #mutate(expression_group = ifelse(BCL2_expression >= median_expression, "High", "Low"))
 
 ```
 
@@ -163,82 +167,125 @@ merged_data_nras <- merged_data_nras%>%
 ```
 
 
-##Kaplan Meier graph fro NRAS
+##Kaplan Meier graph for only metastatic NRAS
 ```{r}
-
+merged_data_nras_metastatic <- merged_data_nras |> 
+  filter(Group!="Primary Tumor") |> droplevels()
 # Convert time from days to years
-merged_data_nras$OS_time_years <- merged_data_nras$OS.time / 365.25
+merged_data_nras_metastatic$OS_time_years <- merged_data_nras_metastatic$OS.time / 365.25
 
 # Create a Surv object with time in years
-surv_object_nras <- Surv(time = merged_data_nras$OS_time_years, event = merged_data_nras$OS)
+surv_object_nras <- Surv(time = merged_data_nras_metastatic$OS_time_years, event = merged_data_nras_metastatic$OS)
 
 # Fit the survival model
-fit_nras <- survfit(surv_object_nras ~ expression_group, data = merged_data_nras)
+fit_nras <- survfit(surv_object_nras ~ expression_group, data = merged_data_nras_metastatic)
 # Plot the Kaplan-Meier survival curve
 Kaplan_Meier_nras <- ggsurvplot(fit_nras, 
-                                  data = merged_data_nras,
+                                  data = merged_data_nras_metastatic,
                                   pval = TRUE, 
                                   risk.table = TRUE, 
                                   conf.int = FALSE,
                                   xlab = "Time (years)",  
                                   ylab = "Survival Probability",
-                                  title = "Kaplan-Meier Survival Curve for BCL-2 Expression NRAS melanoma",
+                                  title = "Kaplan-Meier Survival Curve of BCL-2 Expression in metastatic NRAS Mutated Melanoma",
                                   legend.title = "BCL-2 Expression",
                                   legend.labs = c("High", "Low"),
                                   ggtheme = theme_minimal(),
                                   font.title = c(20, "bold"),   
                                   font.x = c(14, "bold"),       
                                   font.y = c(14, "bold"),       
-                                  font.tickslab = c(12, "plain") 
+                                  font.tickslab = c(12, "bold") 
 ) 
 
 # Modify the theme of the plot to center the title and adjust other elements
 Kaplan_Meier_nras$plot <- Kaplan_Meier_nras$plot + 
   theme(
-    plot.margin = unit(c(1, 1, 1, 1), "cm"), # Decrease margins to make the plot smaller
-    plot.title = element_text(size = 20, hjust = 0.5),   # Increase plot title size and center it
-    axis.title.x = element_text(size = 16), # Increase x-axis title size
-    axis.title.y = element_text(size = 16), # Increase y-axis title size
-    axis.text.x = element_text(size = 14),  # Increase x-axis tick label size
-    axis.text.y = element_text(size = 14)   # Increase y-axis tick label size
+    plot.margin = unit(c(0.8, 0.8, 0.8, 0.8), "cm"), # Decrease margins to make the plot smaller
+    plot.title = element_text(size = 18, hjust = 0.5),   # Increase plot title size and center it
+    axis.title.x = element_text(size = 18, "bold"), # Increase x-axis title size
+    axis.title.y = element_text(size = 18, "bold"), # Increase y-axis title size
+    axis.text.x = element_text(size = 16, "bold"),  # Increase x-axis tick label size
+    axis.text.y = element_text(size = 16, "bold")   # Increase y-axis tick label size
   )
 
 print(Kaplan_Meier_nras)
 
 ```
 
+```{r}
+
+# Convert time from days to years
+merged_data_nras$OS_time_years <- merged_data_nras$OS.time / 365.25
+
+# Create a Surv object with time in years
+surv_object_nras_1 <- Surv(time = merged_data_nras$OS_time_years, event = merged_data_nras$OS)
+
+# Fit the survival model
+fit_nras_1 <- survfit(surv_object_nras_1 ~ expression_group, data = merged_data_nras)
+# Plot the Kaplan-Meier survival curve
+Kaplan_Meier_nras_1 <- ggsurvplot(fit_nras_1, 
+                                  data = merged_data_nras,
+                                  pval = TRUE, 
+                                  risk.table = TRUE, 
+                                  conf.int = FALSE,
+                                  xlab = "Time (years)",  
+                                  ylab = "Survival Probability",
+                                  title = "Kaplan-Meier Survival Curve of BCL-2 Expression in NRAS Mutated Melanoma",
+                                  legend.title = "BCL-2 Expression",
+                                  legend.labs = c("High", "Low"),
+                                  ggtheme = theme_minimal(),
+                                  font.title = c(20, "bold"),   
+                                  font.x = c(14, "bold"),       
+                                  font.y = c(14, "bold"),       
+                                  font.tickslab = c(12, "bold") 
+) 
+
+# Modify the theme of the plot to center the title and adjust other elements
+Kaplan_Meier_nras_1$plot <- Kaplan_Meier_nras_1$plot + 
+  theme(
+    plot.margin = unit(c(0.8, 0.8, 0.8, 0.8), "cm"), # Decrease margins to make the plot smaller
+    plot.title = element_text(size = 18, hjust = 0.5),   # Increase plot title size and center it
+    axis.title.x = element_text(size = 18, "bold"), # Increase x-axis title size
+    axis.title.y = element_text(size = 18, "bold"), # Increase y-axis title size
+    axis.text.x = element_text(size = 16, "bold"),  # Increase x-axis tick label size
+    axis.text.y = element_text(size = 16, "bold")   # Increase y-axis tick label size
+  )
+
+print(Kaplan_Meier_nras_1)
+```
+
 
 ## Voilin plot for primary and metastatic tumors
 
 ```{r}
-
 merged_data_nras$Group <- as.factor(merged_data_nras$Group)
-
+#merged_data_nras <- merged_data_nras %>%
+#mutate(log_BCL2_expression = log1p(`BCL2_expression`))
 
 violin_plot_nras <- ggplot(merged_data_nras, aes(x = Group, y = BCL2_expression, fill = Group)) +
   geom_violin(trim = FALSE, scale = "width", alpha = 0.3) +  
   geom_boxplot(width = 0.1, outlier.shape = NA, color = "black") + 
-  scale_fill_manual(values = c("#66B2FF","#FF9999")) +  
-  labs(title = "Expression of BCL-2 in Primary vs Metastatic Samples in NRAS",
+  scale_fill_manual(values = c("skyblue","pink")) +  
+  labs(title = "Expression of BCL-2 in Primary vs Metastatic Samples in NRAS Melanoma",
        x = "Group",
-       y = "BCL2 Expression") +
+       y = "Normalized BCL2 Expression") +
   theme_minimal() +
   theme(
-    plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
-    axis.title.x = element_text(size = 20, face = "bold"),  
-    axis.title.y = element_text(size = 20, face = "bold"),  
-    axis.text.x = element_text(size = 18),  
-    axis.text.y = element_text(size = 18),  
+    plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 16, face = "bold"),  
+    axis.title.y = element_text(size = 16, face = "bold"),  
+    axis.text.x = element_text(size = 14, face = "bold"),  
+    axis.text.y = element_text(size = 14, face = "bold"),  
     legend.position = "none"  
-  ) +
-  scale_y_continuous(limits = c(min(merged_data_nras$BCL2_expression) - 1, 
-                                max(merged_data_nras$BCL2_expression) + 1)) 
-
+  ) 
+#+
+  #scale_y_continuous(limits = c(min(merged_data_nras$BCL2_expression) - 0.2, 
+                                #max(merged_data_nras$BCL2_expression) + 0.2)) 
 # Add statistical test
 violin_plot_nras <- violin_plot_nras +
   stat_compare_means(method = "wilcox.test", 
                      comparisons = list(c("Primary Tumor", "Metastatic")), 
-                     label = "p.format", 
+                     label = "p.format",
                      label.y = max(merged_data_nras$BCL2_expression) + 0.5)  
 
 print(violin_plot_nras)
