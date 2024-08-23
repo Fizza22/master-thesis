@@ -1,6 +1,6 @@
 ---
 title: "Single cell data analysis"
-author: "Fizza Irfan" "AG"
+author: "Fizza Irfan"
 format:
   html:
     embed-resources: true
@@ -68,7 +68,6 @@ create_dgcmatrix <- function(path, max_cols = 1000) {
     CreateSeuratObject(project = new_id)
 }
 ```
-
 
 loop over the all files
 
@@ -209,14 +208,54 @@ SKMel30_normalized <-SKMel30_filtered %>%
 M20_normalized <-M20_filtered %>%
     NormalizeData()
 ```
-## violin plots for normalized data
+
+## violin plot function
 ```{r}
-plot_violin(Meljuso_normalized, features = c("BCL2", "ACTB"))
-plot_violin(IPC298_normalized, features = c("BCL2", "ACTB"))
-plot_violin(SKMel30_normalized, features = c("BCL2", "PARP1"))
-plot_violin(M20_normalized, features = c("BCL2", "ACTB"))
+plot_violin <- function(seurat_object, features, group_by = "orig.ident", pt_size = 0.1) {
+  VlnPlot(seurat_object, features = features, layer = "data", group.by = group_by, pt.size = pt_size) +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 15, face = "bold"))
+}
 ```
 
+## violin plots for normalized data
+
+```{r}
+Meljuso_violinplot1 <- plot_violin(Meljuso_normalized, features = c("BCL2", "PARP1"))
+IPC298_violinplot1 <- plot_violin(IPC298_normalized, features = c("BCL2", "PARP1"))
+SKMel30_violinplot1 <- plot_violin(SKMel30_normalized, features = c("BCL2", "PARP1"))
+M20_violinplot1 <- plot_violin(M20_normalized, features = c("BCL2", "PARP1"))
+```
+
+```{r}
+ls() |> stringr::str_subset("violinplot1$") |> 
+  set_names(nm = \(x) stringr::str_remove(x, "_violinplot1$")) |> 
+  map(\(x) {
+    # convert characters back symbols and evaluate to get the object
+    # then a list of 2, [[1]] is BCL2 and [[2]] is PARP
+    # in ggplot, plot object are list, with the data.frame in the "data" element
+    eval(as.name(x))[[1]][["data"]] |> as_tibble()
+  }) |> 
+  bind_rows(.id = "cells") |> 
+  filter(stringr::str_detect(ident, "^Untreated")) |> 
+  ggplot(aes(y = BCL2, x = ident, fill = ident)) +
+  geom_violin() +
+  geom_jitter(size = 0.5, alpha = 0.6) +
+  theme_classic() +
+  labs(
+    title = "BCL-2 Expression in NRAS mutant cell lines",
+    x = "Cell lines",
+    y = "Normalized Expression"
+  ) +
+  theme(
+    plot.title = element_text(size = 24, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.text.x = element_text(size = 10, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 10, face = "bold", color = "black")
+  ) #+
+#scale_y_continuous(limits = c(0, 3))
+```
 
 
 #### Normalize the data and scale and PCA
@@ -243,9 +282,9 @@ M20_pca <- processing_seurat_object(M20_filtered)
 ### visualize PCA results
 
 ```{r}
-print(SK30_pca[["pca"]], dims = 1:5, nfeatures = 5)
-VizDimLoadings(SK30_pca, dims = 1:2, reduction = "pca")
-DimPlot(SK30_pca, reduction = "pca")
+#print(SKMel30_pca[["pca"]], dims = 1:5, nfeatures = 5)
+#VizDimLoadings(SKMel30_pca, dims = 1:2, reduction = "pca")
+#DimPlot(SKMel30_pca, reduction = "pca")
 ```
 
 
@@ -274,13 +313,40 @@ M20_umap <- UMAP_function(M20_pca)
 ### Visualize BCL2 expression on UMAP
 
 ```{r}
-plot_feature_umap <- function(seurat_object, feature) {
-  FeaturePlot(seurat_object, features = feature, reduction = "umap") +
+#plot_feature_umap <- function(seurat_object, feature, group.by = "ident") {
+  #FeaturePlot(seurat_object, features = feature, reduction = "umap") +
+    #ggtitle(paste(feature, "Expression on UMAP")) +
+    #theme_minimal() +
+    #theme(plot.title = element_text(size = 15, face = "bold"))
+#}
+```
+
+
+
+```{r}
+plot_feature_umap <- function(seurat_object, feature, group.by = "orig.ident") {
+  # Plot the UMAP with cell population highlighting
+  dim_plot <- DimPlot(seurat_object, reduction = "umap", group.by = group.by) +
+    ggtitle("Conditions") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 15, face = "bold"))
+
+  # Overlay feature expression on the UMAP
+  feature_plot <- FeaturePlot(seurat_object, features = feature, reduction = "umap") +
     ggtitle(paste(feature, "Expression on UMAP")) +
     theme_minimal() +
     theme(plot.title = element_text(size = 15, face = "bold"))
+  
+  # Combine both plots
+  combined_plot <- cowplot::plot_grid(dim_plot, feature_plot, ncol = 2)
+  
+  return(combined_plot)
 }
+
+
 ```
+
+
 
 ## Apply to cell lines
 ```{r}
@@ -295,6 +361,7 @@ print(SKMel30_BCL2_umap)
 print(M20_BCL2_umap)
 ```
 ## violin plot function
+
 ```{r}
 plot_violin <- function(seurat_object, features, group_by = "orig.ident", pt_size = 0.1) {
   VlnPlot(seurat_object, features = features, layer = "data", group.by = group_by, pt.size = pt_size) +
@@ -341,14 +408,47 @@ ls() |> stringr::str_subset("violinplot$") |>
   }) |> 
   bind_rows(.id = "cells") |> 
   filter(stringr::str_detect(ident, "^Untreated")) |> 
-  ggplot(aes(y = BCL2, x = ident)) +
+  ggplot(aes(y = BCL2, x = ident, fill = ident)) +
   geom_violin() +
-  geom_jitter(size = 0.5, alpha = 0.5) +
+  geom_jitter(size = 0.5, alpha = 0.6) +
   theme_classic() +
   labs(
-    title = "BCL-2 Expression Across Different Conditions",
+    title = "BCL-2 Expression in NRAS mutant cell lines",
     x = "Cell lines",
-    y = "BCL2 Expression"
+    y = "Normalized Expression after UMAP"
+  ) +
+  theme(
+    plot.title = element_text(size = 24, face = "bold", hjust = 0.5),
+    axis.title.x = element_text(size = 15, face = "bold"),
+    axis.title.y = element_text(size = 15, face = "bold"),
+    axis.text.x = element_text(size = 10, face = "bold", color = "black"),
+    axis.text.y = element_text(size = 10, face = "bold", color = "black")
+  ) #+
+#scale_y_continuous(limits = c(0, 3))
+```
+
+
+
+```{r}
+ls() |> stringr::str_subset("violinplot$") |> 
+  set_names(nm = \(x) stringr::str_remove(x, "_violinplot$")) |> 
+  map(\(x) {
+    # convert characters back symbols and evaluate to get the object
+    # then a list of 2, [[1]] is BCL2 and [[2]] is PARP
+    # in ggplot, plot object are list, with the data.frame in the "data" element
+    eval(as.name(x))[[2]][["data"]] |> as_tibble()
+  }) |> 
+  bind_rows(.id = "cells") |> 
+  filter(stringr::str_detect(ident, "^Untreated")) |> 
+  ggplot(aes(y = PARP1, x = ident, fill = ident)) +
+  geom_violin(trim = FALSE, alpha = 0.3) +
+  geom_boxplot(width = 0.1, outlier.shape = NA, color = "black") +
+  geom_jitter(size = 0.3, alpha = 0.3) +
+  theme_classic() +
+  labs(
+    title = "PARP1 Expression Across Different Conditions",
+    x = "Cell lines",
+    y = "PARP1 Expression"
   ) +
   theme(
     plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
@@ -357,53 +457,6 @@ ls() |> stringr::str_subset("violinplot$") |>
   )
 ```
 
-
-
-## Plot untreated condition of each cell line together
-```{r}
-
-
-# Function to generate violin plots for specific conditions from multiple Seurat objects
-plot_violin_multiple <- function(seurat_objects, features, conditions, group_by = "orig.ident", pt_size = 0.1) {
-  # List to store individual plots
-  plot_list <- list()
-  
-  # Iterate over each Seurat object and its corresponding condition
-  for (i in seq_along(seurat_objects)) {
-    seurat_object <- seurat_objects[[i]]
-    object_name <- names(seurat_objects)[i]
-    condition <- conditions[[i]]
-    
-    # Filter the Seurat object for the specified condition
-    seurat_filtered <- subset(seurat_object, subset = !!sym(group_by) == condition)
-    
-    # Create the violin plot for the filtered Seurat object
-    p <- VlnPlot(seurat_filtered, features = features, layer = "data", group.by = group_by, pt.size = pt_size) +
-      theme_minimal() +
-       theme(plot.title = element_blank())
-    
-    # Add plot to the list
-    plot_list[[i]] <- p
-  }
-  
-  # Combine all plots into a single figure
-  combined_plot <- wrap_plots(plot_list, ncol = 4)
-  plot_annotation(title = "BCL-2 Expression in untreated cells across four NRAS Melanoma Cell Lines",
-                    theme = theme(plot.title = element_text(size = 20, face = "bold")))
-  
-  return(combined_plot)
-}
-
-seurat_list <- list( Meljuso_umap, IPC298_umap, SKMel30_umap,M20_umap)
-
-# List of corresponding condition names
-conditions <- c("Untreated_Meljuso", "Untreated_IPC298", "Untreated_SKMel30", "Untreated_M20")
-plot_violin_multiple(seurat_list, features = "BCL2", condition = conditions) -> combined_violin_plot
-
-# Print the combined plot
-print(combined_violin_plot)
-
-```
 
 
 
